@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>الملاحظات</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Auth Screen -->
+    <section id="auth-screen" class="screen active">
+      <div class="auth-card">
+        <div class="logo">
+          <span class="logo-icon">📝</span>
+          <h1>الملاحظات</h1>
+          <p class="tagline">ملاحظاتك، خصوصيتك، في متصفحك</p>
+        </div>
+
+        <div class="tabs">
+          <button class="tab active" data-tab="login">تسجيل الدخول</button>
+          <button class="tab" data-tab="register">إنشاء حساب</button>
+        </div>
+
+        <form id="login-form" class="auth-form active">
+          <div class="field">
+            <label for="login-email">البريد الإلكتروني</label>
+            <input type="email" id="login-email" placeholder="example@email.com" required />
+          </div>
+          <div class="field">
+            <label for="login-password">كلمة المرور</label>
+            <input type="password" id="login-password" placeholder="••••••••" required />
+          </div>
+          <button type="submit" class="btn primary">دخول</button>
+          <p class="msg" id="login-msg"></p>
+        </form>
+
+        <form id="register-form" class="auth-form">
+          <div class="field">
+            <label for="reg-email">البريد الإلكتروني</label>
+            <input type="email" id="reg-email" placeholder="example@email.com" required />
+          </div>
+          <div class="field">
+            <label for="reg-password">كلمة المرور</label>
+            <input type="password" id="reg-password" placeholder="••••••••" required minlength="4" />
+          </div>
+          <div class="field">
+            <label for="reg-confirm">تأكيد كلمة المرور</label>
+            <input type="password" id="reg-confirm" placeholder="••••••••" required minlength="4" />
+          </div>
+          <button type="submit" class="btn primary">إنشاء حساب</button>
+          <p class="msg" id="reg-msg"></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Notes Screen -->
+    <section id="notes-screen" class="screen">
+      <header class="topbar">
+        <div class="topbar-left">
+          <span class="logo-icon small">📝</span>
+          <h2>الملاحظات</h2>
+        </div>
+        <div class="topbar-right">
+          <span id="user-email" class="user-email"></span>
+          <button id="logout-btn" class="btn ghost">تسجيل الخروج</button>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <input type="search" id="search-input" placeholder="بحث في الملاحظات..." />
+        <button id="add-note-btn" class="btn primary">+ ملاحظة جديدة</button>
+      </div>
+
+      <div class="notes-container">
+        <div id="notes-grid" class="notes-grid"></div>
+        <div id="empty-state" class="empty-state hidden">
+          <div class="empty-icon">🗂️</div>
+          <p>لا توجد ملاحظات بعد. أضف أول ملاحظة!</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Note Modal -->
+    <div id="note-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-title">ملاحظة جديدة</h3>
+          <button id="modal-close" class="icon-btn" aria-label="إغلاق">✕</button>
+        </div>
+        <form id="note-form">
+          <div class="field">
+            <label for="note-title">العنوان</label>
+            <input type="text" id="note-title" placeholder="عنوان الملاحظة" required />
+          </div>
+          <div class="field">
+            <label for="note-content">المحتوى</label>
+            <textarea id="note-content" rows="6" placeholder="اكتب ملاحظتك هنا..."></textarea>
+          </div>
+          <div class="field row">
+            <label for="note-color">اللون</label>
+            <div class="color-picker" id="color-picker">
+              <button type="button" class="color-swatch" data-color="yellow" style="background:#fff3b0" aria-label="أصفر"></button>
+              <button type="button" class="color-swatch" data-color="green" style="background:#c8f7c5" aria-label="أخضر"></button>
+              <button type="button" class="color-swatch" data-color="blue" style="background:#c5e3f7" aria-label="أزرق"></button>
+              <button type="button" class="color-swatch" data-color="pink" style="background:#f7c5e3" aria-label="وردي"></button>
+              <button type="button" class="color-swatch" data-color="orange" style="background:#f7dcc5" aria-label="برتقالي"></button>
+            </div>
+          </div>
+          <div class="field row">
+            <label class="checkbox">
+              <input type="checkbox" id="note-pinned" />
+              <span>تثبيت الملاحظة</span>
+            </label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" id="modal-cancel" class="btn ghost">إلغاء</button>
+            <button type="submit" class="btn primary">حفظ</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirm-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-card small">
+        <h3>حذف الملاحظة</h3>
+        <p>هل أنت متأكد من حذف هذه الملاحظة؟ لا يمكن التراجع عن هذا الإجراء.</p>
+        <div class="modal-actions">
+          <button id="confirm-cancel" class="btn ghost">إلغاء</button>
+          <button id="confirm-delete" class="btn danger">حذف</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
