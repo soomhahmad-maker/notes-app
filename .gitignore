@@ -1,0 +1,12 @@
+# Secrets
+.env
+.env.txt
+.env.local
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+
+# Temp
+*.tmp
