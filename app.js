@@ -1,37 +1,12 @@
-// ===== Storage helpers =====
-const USERS_KEY = "notes_app_users";
-const SESSION_KEY = "notes_app_session";
+// ===== Supabase config =====
+// (anon/publishable key is safe to expose in the browser)
+const SUPABASE_URL = "https://qonqiwadfynopmdrgjge.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_U8LHkouD1Cfy4aUsH4CnTg_YyrxR0D-";
 
-function getUsers() {
-  try { return JSON.parse(localStorage.getItem(USERS_KEY) || "[]"); }
-  catch (e) { return []; }
-}
-function saveUsers(users) {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-function notesKey(email) {
-  return "notes_app_notes_" + email.toLowerCase();
-}
-function getNotes(email) {
-  try { return JSON.parse(localStorage.getItem(notesKey(email)) || "[]"); }
-  catch (e) { return []; }
-}
-function saveNotes(email, notes) {
-  localStorage.setItem(notesKey(email), JSON.stringify(notes));
-}
-
-// Simple hash (not cryptographically secure, demo only)
-function hash(str) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) {
-    h = ((h << 5) - h) + str.charCodeAt(i);
-    h |= 0;
-  }
-  return "h_" + (h >>> 0).toString(16);
-}
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ===== State =====
-let currentUser = null;
+let currentUser = null; // supabase user object
 let editingId = null;
 let pendingDeleteId = null;
 let selectedColor = "yellow";
@@ -63,27 +38,43 @@ document.querySelectorAll(".tab").forEach(tab => {
   });
 });
 
+// ===== Helpers =====
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = "msg " + (type || "");
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatDate(ts) {
+  const d = new Date(ts);
+  return d.toLocaleDateString("ar-SA") + " " + d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
+}
+
 // ===== Auth =====
-loginForm.addEventListener("submit", (e) => {
+loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const email = document.getElementById("login-email").value.trim().toLowerCase();
+  const email = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
-  const users = getUsers();
-  const user = users.find(u => u.email === email);
-  if (!user) {
-    showMsg(loginMsg, "لا يوجد حساب بهذا البريد", "error");
+  showMsg(loginMsg, "جاري الدخول...", "");
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) {
+    showMsg(loginMsg, translateAuthError(error.message), "error");
     return;
   }
-  if (user.password !== hash(password)) {
-    showMsg(loginMsg, "كلمة المرور غير صحيحة", "error");
-    return;
-  }
-  login(email);
+  await onSignedIn(data.user);
 });
 
-registerForm.addEventListener("submit", (e) => {
+registerForm.addEventListener("submit", async (e) => {
   e.preventDefault();
-  const email = document.getElementById("reg-email").value.trim().toLowerCase();
+  const email = document.getElementById("reg-email").value.trim();
   const password = document.getElementById("reg-password").value;
   const confirm = document.getElementById("reg-confirm").value;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -98,29 +89,43 @@ registerForm.addEventListener("submit", (e) => {
     showMsg(regMsg, "كلمتا المرور غير متطابقتين", "error");
     return;
   }
-  const users = getUsers();
-  if (users.find(u => u.email === email)) {
-    showMsg(regMsg, "هذا البريد مسجل مسبقاً", "error");
+  showMsg(regMsg, "جاري إنشاء الحساب...", "");
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) {
+    showMsg(regMsg, translateAuthError(error.message), "error");
     return;
   }
-  users.push({ email, password: hash(password), createdAt: Date.now() });
-  saveUsers(users);
-  showMsg(regMsg, "تم إنشاء الحساب بنجاح", "success");
-  setTimeout(() => login(email), 600);
+  if (data.session) {
+    showMsg(regMsg, "تم إنشاء الحساب بنجاح", "success");
+    await onSignedIn(data.user);
+  } else {
+    // email confirmation required
+    showMsg(regMsg, "تم إنشاء الحساب. يرجى تأكيد بريدك الإلكتروني ثم تسجيل الدخول.", "success");
+  }
 });
 
-function login(email) {
-  currentUser = email;
-  localStorage.setItem(SESSION_KEY, email);
-  userEmailEl.textContent = email;
-  authScreen.classList.remove("active");
-  notesScreen.classList.add("active");
-  renderNotes();
+function translateAuthError(msg) {
+  const m = (msg || "").toLowerCase();
+  if (m.includes("invalid login credentials")) return "البريد أو كلمة المرور غير صحيحة";
+  if (m.includes("user already registered")) return "هذا البريد مسجل مسبقاً";
+  if (m.includes("password")) return "كلمة المرور غير صالحة";
+  if (m.includes("email")) return "البريد الإلكتروني غير صالح";
+  return msg || "حدث خطأ";
 }
 
-function logout() {
+async function onSignedIn(user) {
+  currentUser = user;
+  userEmailEl.textContent = user.email;
+  authScreen.classList.remove("active");
+  notesScreen.classList.add("active");
+  // migrate any local notes (best effort)
+  await migrateLocalNotes(user);
+  await renderNotes();
+}
+
+async function logout() {
+  await supabase.auth.signOut();
   currentUser = null;
-  localStorage.removeItem(SESSION_KEY);
   notesScreen.classList.remove("active");
   authScreen.classList.add("active");
   loginForm.reset();
@@ -131,29 +136,90 @@ function logout() {
 
 document.getElementById("logout-btn").addEventListener("click", logout);
 
-// Auto login
-(function init() {
-  const session = localStorage.getItem(SESSION_KEY);
-  if (session) {
-    const users = getUsers();
-    if (users.find(u => u.email === session)) {
-      login(session);
-      return;
-    }
-    localStorage.removeItem(SESSION_KEY);
+// Auth state listener (handles session restore)
+supabase.auth.onAuthStateChange(async (event, session) => {
+  if (event === "SIGNED_IN" && session && !currentUser) {
+    await onSignedIn(session.user);
+  } else if (event === "SIGNED_OUT") {
+    currentUser = null;
+    notesScreen.classList.remove("active");
+    authScreen.classList.add("active");
   }
-  authScreen.classList.add("active");
+});
+
+// Auto-login on load
+(async function init() {
+  const { data } = await supabase.auth.getSession();
+  if (data && data.session && data.session.user) {
+    await onSignedIn(data.session.user);
+  } else {
+    authScreen.classList.add("active");
+  }
 })();
 
+// ===== Migration from localStorage =====
+async function migrateLocalNotes(user) {
+  try {
+    const key = "notes_app_notes_" + user.email.toLowerCase();
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const localNotes = JSON.parse(raw);
+    if (!Array.isArray(localNotes) || localNotes.length === 0) return;
+
+    // avoid duplicate migration
+    const migKey = "notes_migrated_" + user.email.toLowerCase();
+    if (localStorage.getItem(migKey) === "1") return;
+
+    // only migrate if cloud has no notes
+    const { data: cloud, error } = await supabase
+      .from("notes")
+      .select("id")
+      .limit(1);
+    if (error) return;
+    if (cloud && cloud.length > 0) {
+      localStorage.setItem(migKey, "1");
+      return;
+    }
+
+    const rows = localNotes.map(n => ({
+      user_id: user.id,
+      title: n.title || "بدون عنوان",
+      content: n.content || "",
+      color: n.color || "yellow",
+      pinned: !!n.pinned,
+      created_at: n.createdAt ? new Date(n.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: n.updatedAt ? new Date(n.updatedAt).toISOString() : new Date().toISOString()
+    }));
+    const { error: insErr } = await supabase.from("notes").insert(rows);
+    if (!insErr) {
+      localStorage.setItem(migKey, "1");
+    }
+  } catch (e) {
+    // silent: migration is best-effort
+  }
+}
+
 // ===== Notes =====
-function renderNotes() {
+async function fetchNotes() {
+  const { data, error } = await supabase
+    .from("notes")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    console.error(error);
+    return [];
+  }
+  return data || [];
+}
+
+async function renderNotes() {
   if (!currentUser) return;
   const query = searchInput.value.trim().toLowerCase();
-  let notes = getNotes(currentUser);
+  let notes = await fetchNotes();
   // sort: pinned first, then newest
   notes.sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    return b.updatedAt - a.updatedAt;
+    return new Date(b.updated_at) - new Date(a.updated_at);
   });
   if (query) {
     notes = notes.filter(n =>
@@ -177,7 +243,7 @@ function renderNotes() {
       <h3>${escapeHtml(n.title)}</h3>
       <p>${escapeHtml(n.content)}</p>
       <div class="meta">
-        <span>${formatDate(n.updatedAt)}</span>
+        <span>${formatDate(new Date(n.updated_at).getTime())}</span>
         <div class="actions">
           <button class="pin" data-id="${n.id}">${n.pinned ? "إلغاء التثبيت" : "تثبيت"}</button>
           <button class="edit" data-id="${n.id}">تعديل</button>
@@ -191,20 +257,6 @@ function renderNotes() {
   notesGrid.querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openEdit(b.dataset.id)));
   notesGrid.querySelectorAll(".delete").forEach(b => b.addEventListener("click", () => askDelete(b.dataset.id)));
   notesGrid.querySelectorAll(".pin").forEach(b => b.addEventListener("click", () => togglePin(b.dataset.id)));
-}
-
-function escapeHtml(s) {
-  return String(s || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
-}
-
-function formatDate(ts) {
-  const d = new Date(ts);
-  return d.toLocaleDateString("ar-SA") + " " + d.toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" });
 }
 
 // ===== Modal logic =====
@@ -229,8 +281,8 @@ function openNew() {
   setTimeout(() => document.getElementById("note-title").focus(), 50);
 }
 
-function openEdit(id) {
-  const notes = getNotes(currentUser);
+async function openEdit(id) {
+  const notes = await fetchNotes();
   const note = notes.find(n => n.id === id);
   if (!note) return;
   editingId = id;
@@ -254,28 +306,27 @@ document.getElementById("modal-close").addEventListener("click", closeModal);
 document.getElementById("modal-cancel").addEventListener("click", closeModal);
 noteModal.querySelector(".modal-backdrop").addEventListener("click", closeModal);
 
-document.getElementById("note-form").addEventListener("submit", (e) => {
+document.getElementById("note-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const title = document.getElementById("note-title").value.trim();
   const content = document.getElementById("note-content").value.trim();
   const pinned = document.getElementById("note-pinned").checked;
   if (!title) return;
-  const notes = getNotes(currentUser);
-  const now = Date.now();
+  const now = new Date().toISOString();
   if (editingId) {
-    const idx = notes.findIndex(n => n.id === editingId);
-    if (idx !== -1) {
-      notes[idx] = { ...notes[idx], title, content, color: selectedColor, pinned, updatedAt: now };
-    }
+    const { error } = await supabase
+      .from("notes")
+      .update({ title, content, color: selectedColor, pinned, updated_at: now })
+      .eq("id", editingId);
+    if (error) { console.error(error); return; }
   } else {
-    notes.push({
-      id: "n_" + now + "_" + Math.random().toString(36).slice(2, 8),
-      title, content, color: selectedColor, pinned, createdAt: now, updatedAt: now
-    });
+    const { error } = await supabase
+      .from("notes")
+      .insert({ user_id: currentUser.id, title, content, color: selectedColor, pinned });
+    if (error) { console.error(error); return; }
   }
-  saveNotes(currentUser, notes);
   closeModal();
-  renderNotes();
+  await renderNotes();
 });
 
 // Delete
@@ -291,34 +342,25 @@ confirmModal.querySelector(".modal-backdrop").addEventListener("click", () => {
   confirmModal.classList.add("hidden");
   pendingDeleteId = null;
 });
-document.getElementById("confirm-delete").addEventListener("click", () => {
+document.getElementById("confirm-delete").addEventListener("click", async () => {
   if (pendingDeleteId) {
-    const notes = getNotes(currentUser).filter(n => n.id !== pendingDeleteId);
-    saveNotes(currentUser, notes);
+    const { error } = await supabase.from("notes").delete().eq("id", pendingDeleteId);
+    if (error) console.error(error);
     pendingDeleteId = null;
     confirmModal.classList.add("hidden");
-    renderNotes();
+    await renderNotes();
   }
 });
 
-function togglePin(id) {
-  const notes = getNotes(currentUser);
-  const note = notes.find(n => n.id === id);
-  if (note) {
-    note.pinned = !note.pinned;
-    note.updatedAt = Date.now();
-    saveNotes(currentUser, notes);
-    renderNotes();
-  }
+async function togglePin(id) {
+  // fetch current
+  const { data } = await supabase.from("notes").select("pinned").eq("id", id).single();
+  if (!data) return;
+  await supabase.from("notes").update({ pinned: !data.pinned, updated_at: new Date().toISOString() }).eq("id", id);
+  await renderNotes();
 }
 
-searchInput.addEventListener("input", renderNotes);
-
-// ===== Utils =====
-function showMsg(el, text, type) {
-  el.textContent = text;
-  el.className = "msg " + type;
-}
+searchInput.addEventListener("input", () => renderNotes());
 
 // Keyboard shortcut: Esc to close modals
 document.addEventListener("keydown", (e) => {
