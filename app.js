@@ -66,6 +66,7 @@ loginForm.addEventListener("submit", async (e) => {
   showMsg(loginMsg, "جاري الدخول...", "");
   const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
+    console.error("Supabase signIn error:", error);
     showMsg(loginMsg, translateAuthError(error.message), "error");
     return;
   }
@@ -92,6 +93,7 @@ registerForm.addEventListener("submit", async (e) => {
   showMsg(regMsg, "جاري إنشاء الحساب...", "");
   const { data, error } = await supabaseClient.auth.signUp({ email, password });
   if (error) {
+    console.error("Supabase signUp error:", error);
     showMsg(regMsg, translateAuthError(error.message), "error");
     return;
   }
@@ -108,8 +110,10 @@ function translateAuthError(msg) {
   const m = (msg || "").toLowerCase();
   if (m.includes("invalid login credentials")) return "البريد أو كلمة المرور غير صحيحة";
   if (m.includes("user already registered")) return "هذا البريد مسجل مسبقاً";
+  if (m.includes("email not confirmed")) return "يرجى تأكيد بريدك الإلكتروني (تحقق من صندوق الوارد)";
   if (m.includes("password")) return "كلمة المرور غير صالحة";
-  if (m.includes("email")) return "البريد الإلكتروني غير صالح";
+  if (m.includes("email")) return "البريد الإلكتروني غير صالح: " + (msg || "");
+  console.error("Supabase auth error (raw):", msg);
   return msg || "حدث خطأ";
 }
 
