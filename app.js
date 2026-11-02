@@ -321,22 +321,34 @@ document.getElementById("note-form").addEventListener("submit", async (e) => {
   const title = document.getElementById("note-title").value.trim();
   const content = document.getElementById("note-content").value.trim();
   const pinned = document.getElementById("note-pinned").checked;
-  if (!title) return;
-  const now = new Date().toISOString();
-  if (editingId) {
-    const { error } = await supabaseClient
-      .from("notes")
-      .update({ title, content, color: selectedColor, pinned, updated_at: now })
-      .eq("id", editingId);
-    if (error) { console.error(error); return; }
-  } else {
-    const { error } = await supabaseClient
-      .from("notes")
-      .insert({ user_id: currentUser.id, title, content, color: selectedColor, pinned });
-    if (error) { console.error(error); return; }
+  if (!title) {
+    alert("العنوان مطلوب (Title is required)");
+    return;
   }
-  closeModal();
-  await renderNotes();
+  if (!currentUser) {
+    alert("يرجى تسجيل الدخول أولاً (Please log in first)");
+    return;
+  }
+  try {
+    const now = new Date().toISOString();
+    if (editingId) {
+      const { error } = await supabaseClient
+        .from("notes")
+        .update({ title, content, color: selectedColor, pinned, updated_at: now })
+        .eq("id", editingId);
+      if (error) { console.error("Save (update) error:", error); alert("فشل الحفظ: " + (error.message || error)); return; }
+    } else {
+      const { error } = await supabaseClient
+        .from("notes")
+        .insert({ user_id: currentUser.id, title, content, color: selectedColor, pinned });
+      if (error) { console.error("Save (insert) error:", error); alert("فشل الحفظ: " + (error.message || error)); return; }
+    }
+    closeModal();
+    await renderNotes();
+  } catch (err) {
+    console.error("Save exception:", err);
+    alert("فشل الحفظ: " + (err && err.message ? err.message : err));
+  }
 });
 
 // Delete
