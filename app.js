@@ -91,7 +91,13 @@ registerForm.addEventListener("submit", async (e) => {
     return;
   }
   showMsg(regMsg, "جاري إنشاء الحساب...", "");
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  const { data, error } = await supabaseClient.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: window.location.origin + window.location.pathname
+    }
+  });
   if (error) {
     console.error("Supabase signUp error:", error);
     showMsg(regMsg, translateAuthError(error.message), "error");
@@ -175,7 +181,7 @@ async function migrateLocalNotes(user) {
     if (localStorage.getItem(migKey) === "1") return;
 
     // only migrate if cloud has no notes
-    const { data: cloud, error } = await supabase
+    const { data: cloud, error } = await supabaseClient
       .from("notes")
       .select("id")
       .limit(1);
@@ -205,7 +211,7 @@ async function migrateLocalNotes(user) {
 
 // ===== Notes =====
 async function fetchNotes() {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from("notes")
     .select("*")
     .order("updated_at", { ascending: false });
@@ -318,13 +324,13 @@ document.getElementById("note-form").addEventListener("submit", async (e) => {
   if (!title) return;
   const now = new Date().toISOString();
   if (editingId) {
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from("notes")
       .update({ title, content, color: selectedColor, pinned, updated_at: now })
       .eq("id", editingId);
     if (error) { console.error(error); return; }
   } else {
-    const { error } = await supabase
+    const { error } = await supabaseClient
       .from("notes")
       .insert({ user_id: currentUser.id, title, content, color: selectedColor, pinned });
     if (error) { console.error(error); return; }
