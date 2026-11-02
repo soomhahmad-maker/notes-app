@@ -44,12 +44,13 @@ create policy "notes_delete_own"
 create index if not exists notes_user_id_idx on public.notes(user_id);
 
 -- 4b) Grants (ensure authenticated role can use the table; RLS still enforces per-user access)
-grant usage on schema public to anon, authenticated;
+
+grant usage on schema public to authenticated;
 grant select, insert, update, delete on public.notes to authenticated;
-grant select on public.notes to anon;
+
 
 -- 5) (Optional) auto-update updated_at
-create or replace function public.set_updated_at()
+create or replace function public.notes_set_updated_at()
 returns trigger as $$
 begin
   new.updated_at = now();
@@ -60,7 +61,7 @@ $$ language plpgsql;
 drop trigger if exists notes_set_updated_at on public.notes;
 create trigger notes_set_updated_at
   before update on public.notes
-  for each row execute function public.set_updated_at();
+  for each row execute function public.notes_set_updated_at();
 
 -- ============================================
 -- After running this SQL:

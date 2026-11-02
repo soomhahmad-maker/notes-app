@@ -61,6 +61,7 @@
     <section id="notes-screen" class="screen">
       <header class="topbar">
         <div class="topbar-left">
+          <button id="menu-toggle" class="icon-btn menu-toggle" aria-label="القائمة">☰</button>
           <span class="logo-icon small">📝</span>
           <h2>الملاحظات</h2>
         </div>
@@ -70,17 +71,43 @@
         </div>
       </header>
 
-      <div class="toolbar">
-        <input type="search" id="search-input" placeholder="بحث في الملاحظات..." />
-        <button id="add-note-btn" class="btn primary">+ ملاحظة جديدة</button>
-      </div>
+      <div class="app-layout">
+        <aside id="sidebar" class="sidebar">
+          <nav class="sidebar-nav">
+            <button class="nav-item active" data-section="all">
+              <span class="nav-icon">📋</span>
+              <span class="nav-label">جميع الملاحظات</span>
+            </button>
+            <button class="nav-item" data-section="pinned">
+              <span class="nav-icon">📌</span>
+              <span class="nav-label">المثبتة</span>
+            </button>
+            <button class="nav-item" data-section="favorites">
+              <span class="nav-icon">⭐</span>
+              <span class="nav-label">المفضلة</span>
+            </button>
+            <button class="nav-item" data-section="trash">
+              <span class="nav-icon">🗑️</span>
+              <span class="nav-label">سلة المحذوفات</span>
+            </button>
+          </nav>
+        </aside>
+        <div id="sidebar-backdrop" class="sidebar-backdrop hidden"></div>
 
-      <div class="notes-container">
-        <div id="notes-grid" class="notes-grid"></div>
-        <div id="empty-state" class="empty-state hidden">
-          <div class="empty-icon">🗂️</div>
-          <p>لا توجد ملاحظات بعد. أضف أول ملاحظة!</p>
-        </div>
+        <main class="main-content">
+          <div class="toolbar">
+            <input type="search" id="search-input" placeholder="بحث في الملاحظات..." />
+            <button id="add-note-btn" class="btn primary">+ ملاحظة جديدة</button>
+          </div>
+
+          <div class="notes-container">
+            <div id="notes-grid" class="notes-grid"></div>
+            <div id="empty-state" class="empty-state hidden">
+              <div class="empty-icon">🗂️</div>
+              <p id="empty-text">لا توجد ملاحظات بعد. أضف أول ملاحظة!</p>
+            </div>
+          </div>
+        </main>
       </div>
     </section>
 
@@ -143,6 +170,6 @@
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

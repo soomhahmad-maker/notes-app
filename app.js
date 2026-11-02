@@ -10,6 +10,9 @@ let currentUser = null; // supabase user object
 let editingId = null;
 let pendingDeleteId = null;
 let selectedColor = "yellow";
+let currentSection = "all"; // all | pinned | favorites | trash
+let favoriteIds = new Set();
+let trashedNotes = []; // array of note objects (client-side trash)
 
 // ===== DOM refs =====
 const authScreen = document.getElementById("auth-screen");
@@ -24,6 +27,10 @@ const emptyState = document.getElementById("empty-state");
 const searchInput = document.getElementById("search-input");
 const noteModal = document.getElementById("note-modal");
 const confirmModal = document.getElementById("confirm-modal");
+const sidebar = document.getElementById("sidebar");
+const sidebarBackdrop = document.getElementById("sidebar-backdrop");
+const menuToggle = document.getElementById("menu-toggle");
+const addNoteBtn = document.getElementById("add-note-btn");
 
 // ===== Tabs =====
 document.querySelectorAll(".tab").forEach(tab => {
@@ -128,14 +135,19 @@ async function onSignedIn(user) {
   userEmailEl.textContent = user.email;
   authScreen.classList.remove("active");
   notesScreen.classList.add("active");
+  loadUserPrefs(user);
   // migrate any local notes (best effort)
   await migrateLocalNotes(user);
+  currentSection = "all";
+  updateNavActive();
   await renderNotes();
 }
 
 async function logout() {
   await supabaseClient.auth.signOut();
   currentUser = null;
+  favoriteIds = new Set();
+  trashedNotes = [];
   notesScreen.classList.remove("active");
   authScreen.classList.add("active");
   loginForm.reset();
@@ -209,6 +221,28 @@ async function migrateLocalNotes(user) {
   }
 }
 
+// ===== User prefs (favorites & trash) - client-side, no DB change =====
+function userKey(suffix) { return suffix + "_" + (currentUser ? currentUser.email.toLowerCase() : "anon"); }
+function loadUserPrefs(user) {
+  try {
+    const favRaw = localStorage.getItem("fav_" + user.email.toLowerCase());
+    favoriteIds = new Set(favRaw ? JSON.parse(favRaw) : []);
+  } catch (e) { favoriteIds = new Set(); }
+  try {
+    const trashRaw = localStorage.getItem("trash_" + user.email.toLowerCase());
+    trashedNotes = trashRaw ? JSON.parse(trashRaw) : [];
+    if (!Array.isArray(trashedNotes)) trashedNotes = [];
+  } catch (e) { trashedNotes = []; }
+}
+function saveFavs() {
+  if (!currentUser) return;
+  localStorage.setItem("fav_" + currentUser.email.toLowerCase(), JSON.stringify([...favoriteIds]));
+}
+function saveTrash() {
+  if (!currentUser) return;
+  localStorage.setItem("trash_" + currentUser.email.toLowerCase(), JSON.stringify(trashedNotes));
+}
+
 // ===== Notes =====
 async function fetchNotes() {
   const { data, error } = await supabaseClient
@@ -225,8 +259,19 @@ async function fetchNotes() {
 async function renderNotes() {
   if (!currentUser) return;
   const query = searchInput.value.trim().toLowerCase();
-  let notes = await fetchNotes();
-  // sort: pinned first, then newest
+
+  // Toggle add-note button visibility (hidden in trash)
+  if (addNoteBtn) addNoteBtn.style.display = (currentSection === "trash") ? "none" : "";
+
+  let notes = [];
+  if (currentSection === "trash") {
+    notes = trashedNotes.slice();
+  } else {
+    notes = await fetchNotes();
+    if (currentSection === "pinned") notes = notes.filter(n => n.pinned);
+    if (currentSection === "favorites") notes = notes.filter(n => favoriteIds.has(n.id));
+  }
+
   notes.sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     return new Date(b.updated_at) - new Date(a.updated_at);
@@ -237,36 +282,78 @@ async function renderNotes() {
       (n.content || "").toLowerCase().includes(query)
     );
   }
+
   notesGrid.innerHTML = "";
   if (notes.length === 0) {
-    const p = emptyState.querySelector("p");
-    if (p) p.textContent = query ? "لا توجد نتائج مطابقة للبحث" : "لا توجد ملاحظات بعد. أضف أول ملاحظة!";
+    const p = document.getElementById("empty-text");
+    if (p) p.textContent = emptyTextFor(currentSection, query);
     emptyState.classList.remove("hidden");
     return;
   }
   emptyState.classList.add("hidden");
-  notes.forEach(n => {
-    const card = document.createElement("div");
-    card.className = "note-card color-" + (n.color || "yellow") + (n.pinned ? " pinned" : "");
-    card.innerHTML = `
-      ${n.pinned ? '<span class="pin-badge">📌</span>' : ''}
-      <h3>${escapeHtml(n.title)}</h3>
-      <p>${escapeHtml(n.content)}</p>
-      <div class="meta">
-        <span>${formatDate(new Date(n.updated_at).getTime())}</span>
-        <div class="actions">
-          <button class="pin" data-id="${n.id}">${n.pinned ? "إلغاء التثبيت" : "تثبيت"}</button>
-          <button class="edit" data-id="${n.id}">تعديل</button>
-          <button class="delete" data-id="${n.id}">حذف</button>
-        </div>
-      </div>
-    `;
-    notesGrid.appendChild(card);
-  });
 
-  notesGrid.querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openEdit(b.dataset.id)));
-  notesGrid.querySelectorAll(".delete").forEach(b => b.addEventListener("click", () => askDelete(b.dataset.id)));
-  notesGrid.querySelectorAll(".pin").forEach(b => b.addEventListener("click", () => togglePin(b.dataset.id)));
+  if (currentSection === "trash") {
+    notes.forEach(n => {
+      const card = document.createElement("div");
+      card.className = "note-card color-" + (n.color || "yellow") + " trash-card";
+      card.innerHTML = `
+        <h3>${escapeHtml(n.title)}</h3>
+        <p>${escapeHtml(n.content)}</p>
+        <div class="meta">
+          <span>${formatDate(new Date(n.updated_at || n.createdAt || Date.now()).getTime())}</span>
+          <div class="actions">
+            <button class="restore" data-id="${n.id}">استعادة</button>
+            <button class="perm-delete" data-id="${n.id}">حذف نهائي</button>
+          </div>
+        </div>
+      `;
+      notesGrid.appendChild(card);
+    });
+    notesGrid.querySelectorAll(".restore").forEach(b => b.addEventListener("click", () => restoreNote(b.dataset.id)));
+    notesGrid.querySelectorAll(".perm-delete").forEach(b => b.addEventListener("click", () => permanentDelete(b.dataset.id)));
+  } else {
+    notes.forEach(n => {
+      const isFav = favoriteIds.has(n.id);
+      const card = document.createElement("div");
+      card.className = "note-card color-" + (n.color || "yellow") + (n.pinned ? " pinned" : "");
+      card.innerHTML = `
+        ${n.pinned ? '<span class="pin-badge">📌</span>' : ''}
+        <h3>${escapeHtml(n.title)}</h3>
+        <p>${escapeHtml(n.content)}</p>
+        <div class="meta">
+          <span>${formatDate(new Date(n.updated_at).getTime())}</span>
+          <div class="actions">
+            <button class="fav-btn ${isFav ? "faved" : ""}" data-id="${n.id}">${isFav ? "★" : "☆"} مفضلة</button>
+            <button class="pin" data-id="${n.id}">${n.pinned ? "إلغاء التثبيت" : "تثبيت"}</button>
+            <button class="edit" data-id="${n.id}">تعديل</button>
+            <button class="delete" data-id="${n.id}">حذف</button>
+          </div>
+        </div>
+      `;
+      notesGrid.appendChild(card);
+    });
+
+    notesGrid.querySelectorAll(".edit").forEach(b => b.addEventListener("click", () => openEdit(b.dataset.id)));
+    notesGrid.querySelectorAll(".delete").forEach(b => b.addEventListener("click", () => askDelete(b.dataset.id)));
+    notesGrid.querySelectorAll(".pin").forEach(b => b.addEventListener("click", () => togglePin(b.dataset.id)));
+    notesGrid.querySelectorAll(".fav-btn").forEach(b => b.addEventListener("click", () => toggleFavorite(b.dataset.id)));
+  }
+}
+
+function emptyTextFor(section, query) {
+  if (query) return "لا توجد نتائج مطابقة للبحث";
+  switch (section) {
+    case "pinned": return "لا توجد ملاحظات مثبتة.";
+    case "favorites": return "لا توجد ملاحظات في المفضلة.";
+    case "trash": return "سلة المحذوفات فارغة.";
+    default: return "لا توجد ملاحظات بعد. أضف أول ملاحظة!";
+  }
+}
+
+function updateNavActive() {
+  document.querySelectorAll(".nav-item").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.section === currentSection);
+  });
 }
 
 // ===== Modal logic =====
@@ -351,7 +438,7 @@ document.getElementById("note-form").addEventListener("submit", async (e) => {
   }
 });
 
-// Delete
+// Delete (move to client-side trash; remove from Supabase)
 function askDelete(id) {
   pendingDeleteId = id;
   confirmModal.classList.remove("hidden");
@@ -366,13 +453,62 @@ confirmModal.querySelector(".modal-backdrop").addEventListener("click", () => {
 });
 document.getElementById("confirm-delete").addEventListener("click", async () => {
   if (pendingDeleteId) {
-    const { error } = await supabaseClient.from("notes").delete().eq("id", pendingDeleteId);
-    if (error) console.error(error);
+    try {
+      // find the note in cloud list to store in trash
+      const notes = await fetchNotes();
+      const note = notes.find(n => n.id === pendingDeleteId);
+      if (note) {
+        trashedNotes.unshift({ ...note });
+        saveTrash();
+        favoriteIds.delete(pendingDeleteId);
+        saveFavs();
+      }
+      const { error } = await supabaseClient.from("notes").delete().eq("id", pendingDeleteId);
+      if (error) { console.error("Delete error:", error); alert("فشل الحذف: " + (error.message || error)); return; }
+    } catch (err) {
+      console.error("Delete exception:", err);
+    }
     pendingDeleteId = null;
     confirmModal.classList.add("hidden");
     await renderNotes();
   }
 });
+
+// Trash actions
+async function restoreNote(id) {
+  const note = trashedNotes.find(n => n.id === id);
+  if (!note) return;
+  try {
+    const { error } = await supabaseClient.from("notes").insert({
+      id: note.id,
+      user_id: currentUser.id,
+      title: note.title,
+      content: note.content,
+      color: note.color,
+      pinned: note.pinned,
+      created_at: note.created_at,
+      updated_at: new Date().toISOString()
+    });
+    if (error) { console.error("Restore error:", error); alert("فشل الاستعادة: " + (error.message || error)); return; }
+    trashedNotes = trashedNotes.filter(n => n.id !== id);
+    saveTrash();
+    await renderNotes();
+  } catch (err) { console.error(err); }
+}
+
+function permanentDelete(id) {
+  trashedNotes = trashedNotes.filter(n => n.id !== id);
+  saveTrash();
+  renderNotes();
+}
+
+// Favorites
+function toggleFavorite(id) {
+  if (favoriteIds.has(id)) favoriteIds.delete(id);
+  else favoriteIds.add(id);
+  saveFavs();
+  renderNotes();
+}
 
 async function togglePin(id) {
   // fetch current
@@ -380,6 +516,33 @@ async function togglePin(id) {
   if (!data) return;
   await supabaseClient.from("notes").update({ pinned: !data.pinned, updated_at: new Date().toISOString() }).eq("id", id);
   await renderNotes();
+}
+
+// Sidebar navigation
+document.querySelectorAll(".nav-item").forEach(btn => {
+  btn.addEventListener("click", () => {
+    currentSection = btn.dataset.section;
+    updateNavActive();
+    searchInput.value = "";
+    renderNotes();
+    // close mobile sidebar
+    if (sidebar) sidebar.classList.remove("open");
+    if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
+  });
+});
+
+// Mobile menu toggle
+if (menuToggle) {
+  menuToggle.addEventListener("click", () => {
+    if (sidebar) sidebar.classList.add("open");
+    if (sidebarBackdrop) sidebarBackdrop.classList.remove("hidden");
+  });
+}
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener("click", () => {
+    if (sidebar) sidebar.classList.remove("open");
+    sidebarBackdrop.classList.add("hidden");
+  });
 }
 
 searchInput.addEventListener("input", () => renderNotes());
