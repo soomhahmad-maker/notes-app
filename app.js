@@ -3,7 +3,7 @@
 const SUPABASE_URL = "https://qonqiwadfynopmdrgjge.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_U8LHkouD1Cfy4aUsH4CnTg_YyrxR0D-";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ===== State =====
 let currentUser = null; // supabase user object
@@ -64,7 +64,7 @@ loginForm.addEventListener("submit", async (e) => {
   const email = document.getElementById("login-email").value.trim();
   const password = document.getElementById("login-password").value;
   showMsg(loginMsg, "جاري الدخول...", "");
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
   if (error) {
     showMsg(loginMsg, translateAuthError(error.message), "error");
     return;
@@ -90,7 +90,7 @@ registerForm.addEventListener("submit", async (e) => {
     return;
   }
   showMsg(regMsg, "جاري إنشاء الحساب...", "");
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
   if (error) {
     showMsg(regMsg, translateAuthError(error.message), "error");
     return;
@@ -124,7 +124,7 @@ async function onSignedIn(user) {
 }
 
 async function logout() {
-  await supabase.auth.signOut();
+  await supabaseClient.auth.signOut();
   currentUser = null;
   notesScreen.classList.remove("active");
   authScreen.classList.add("active");
@@ -137,7 +137,7 @@ async function logout() {
 document.getElementById("logout-btn").addEventListener("click", logout);
 
 // Auth state listener (handles session restore)
-supabase.auth.onAuthStateChange(async (event, session) => {
+supabaseClient.auth.onAuthStateChange(async (event, session) => {
   if (event === "SIGNED_IN" && session && !currentUser) {
     await onSignedIn(session.user);
   } else if (event === "SIGNED_OUT") {
@@ -149,7 +149,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 
 // Auto-login on load
 (async function init() {
-  const { data } = await supabase.auth.getSession();
+  const { data } = await supabaseClient.auth.getSession();
   if (data && data.session && data.session.user) {
     await onSignedIn(data.session.user);
   } else {
@@ -190,7 +190,7 @@ async function migrateLocalNotes(user) {
       created_at: n.createdAt ? new Date(n.createdAt).toISOString() : new Date().toISOString(),
       updated_at: n.updatedAt ? new Date(n.updatedAt).toISOString() : new Date().toISOString()
     }));
-    const { error: insErr } = await supabase.from("notes").insert(rows);
+    const { error: insErr } = await supabaseClient.from("notes").insert(rows);
     if (!insErr) {
       localStorage.setItem(migKey, "1");
     }
@@ -344,7 +344,7 @@ confirmModal.querySelector(".modal-backdrop").addEventListener("click", () => {
 });
 document.getElementById("confirm-delete").addEventListener("click", async () => {
   if (pendingDeleteId) {
-    const { error } = await supabase.from("notes").delete().eq("id", pendingDeleteId);
+    const { error } = await supabaseClient.from("notes").delete().eq("id", pendingDeleteId);
     if (error) console.error(error);
     pendingDeleteId = null;
     confirmModal.classList.add("hidden");
@@ -354,9 +354,9 @@ document.getElementById("confirm-delete").addEventListener("click", async () => 
 
 async function togglePin(id) {
   // fetch current
-  const { data } = await supabase.from("notes").select("pinned").eq("id", id).single();
+  const { data } = await supabaseClient.from("notes").select("pinned").eq("id", id).single();
   if (!data) return;
-  await supabase.from("notes").update({ pinned: !data.pinned, updated_at: new Date().toISOString() }).eq("id", id);
+  await supabaseClient.from("notes").update({ pinned: !data.pinned, updated_at: new Date().toISOString() }).eq("id", id);
   await renderNotes();
 }
 
