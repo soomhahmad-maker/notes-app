@@ -43,6 +43,11 @@ create policy "notes_delete_own"
 -- 4) Index for performance
 create index if not exists notes_user_id_idx on public.notes(user_id);
 
+-- 4b) Grants (ensure authenticated role can use the table; RLS still enforces per-user access)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on public.notes to authenticated;
+grant select on public.notes to anon;
+
 -- 5) (Optional) auto-update updated_at
 create or replace function public.set_updated_at()
 returns trigger as $$
@@ -58,7 +63,13 @@ create trigger notes_set_updated_at
   for each row execute function public.set_updated_at();
 
 -- ============================================
--- Dashboard settings (manual):
--- Authentication -> Providers -> Email:
---   Disable "Confirm email" for immediate sign-in (optional).
+-- After running this SQL:
+--   1. If the app still says "Could not find the table public.notes in the
+--      schema cache", go to Supabase Dashboard -> Project Settings -> API
+--      and click "Reload schema" (or wait ~1 minute for PostgREST to refresh).
+--   2. Authentication -> Providers -> Email:
+--        Disable "Confirm email" for immediate sign-in (optional).
+--   3. Authentication -> URL Configuration:
+--        Site URL: https://soomhahmad-maker.github.io/notes-app/
+--        Redirect URLs: add the Site URL and http://localhost:8766/
 -- ============================================
